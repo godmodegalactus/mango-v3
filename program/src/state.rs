@@ -78,6 +78,7 @@ pub enum DataType {
     MangoCache,
     EventQueue,
     AdvancedOrders,
+    OptionMarket,
 }
 
 const NUM_HEALTHS: usize = 2;
@@ -2492,4 +2493,66 @@ impl AdvancedOrders {
         check!(&mango_account.advanced_orders_key == account.key, MangoErrorCode::InvalidAccount)?;
         Ok(state)
     }
+}
+
+#[derive(Eq, PartialEq, Copy, Clone, TryFromPrimitive, IntoPrimitive, Serialize, Deserialize, Debug,)]
+#[repr(u8)]
+#[serde(into = "u8", try_from = "u8")]
+pub enum OptionType {
+    European,
+    American,
+}
+
+#[derive(Copy, Clone, Loadable, Pod)]
+/// Data structure that contains all the information needed to maintain an open
+/// option market.
+pub struct OptionMarket {
+    pub meta_data: MetaData,
+    pub option_type: OptionType,
+    pub option_mint: Pubkey,
+    pub writer_token_mint: Pubkey,
+    pub underlying_asset_mint: Pubkey,
+    pub quote_asset_mint: Pubkey,
+    pub contract_size: u64,
+    pub quote_amount: u64,
+    pub expiry: u64,            // expiry in unix time
+    pub underlying_asset_pool: Pubkey,
+    pub quote_asset_pool: Pubkey,
+    pub expired: bool,
+}
+
+impl OptionMarket {
+    pub fn load_mut_checked<'a>(
+        account: &'a AccountInfo,
+        program_id: &Pubkey,
+    ) -> MangoResult<RefMut<'a, Self>> {
+        check_eq!(account.owner, program_id, MangoErrorCode::InvalidOwner)?;
+
+        let option_market: RefMut<'a, Self> = Self::load_mut(account)?;
+        check!(option_market.meta_data.is_initialized, MangoErrorCode::InvalidAccount)?;
+        check_eq!(
+            option_market.meta_data.data_type,
+            DataType::OptionMarket as u8,
+            MangoErrorCode::InvalidAccount
+        )?;
+
+        Ok(option_market)
+    }
+    pub fn load_checked<'a>(
+        account: &'a AccountInfo,
+        program_id: &Pubkey,
+    ) -> MangoResult<Ref<'a, Self>> {
+        check_eq!(account.owner, program_id, MangoErrorCode::InvalidOwner)?;
+
+        let option_market: Ref<'a, Self> = Self::load(account)?;
+        check!(option_market.meta_data.is_initialized, MangoErrorCode::InvalidAccount)?;
+        check_eq!(
+            option_market.meta_data.data_type,
+            DataType::OptionMarket as u8,
+            MangoErrorCode::InvalidAccount
+        )?;
+
+        Ok(option_market)
+    }
+
 }
