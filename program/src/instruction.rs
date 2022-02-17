@@ -931,14 +931,12 @@ pub enum MangoInstruction {
     /// 
     /// Accounts expected by this instruction (9)
     /// 
-    /// 0. Option Market a pda account which will store all the information related to the option market [b"mango_option_market", [optiontype],contract_size.le, quote_amount.le, expiry.le]]
-    /// 1. create a PDA for option mint with following keys [b"mango_option_mint", option_market.key]
-    /// 2. create a PDA for writer mint with following keys [b"mango_option_writer_mint", option_market.key]
+    /// 0. [writable] Option Market a pda account which will store all the information related to the option market [b"mango_option_market", [optiontype],contract_size.le, quote_amount.le, expiry.le]]
+    /// 1. [writable] create a PDA for option mint with following keys [b"mango_option_mint", option_market.key]
+    /// 2. [writable] create a PDA for writer mint with following keys [b"mango_option_writer_mint", option_market.key]
     /// 3. Underlying mint
     /// 4. quote mint
-    /// 5. underlying pool (Nodebank vault)
-    /// 6. quote pool (Quote token vault)
-    /// 7. payer
+    /// 7. [signer] payer
     /// 8. system program
     /// 9. token program
     /// 10. rent program
@@ -1396,6 +1394,20 @@ impl MangoInstruction {
                 }
             }
             60 => MangoInstruction::CreateSpotOpenOrders,
+            61 => {
+                let data_arr = array_ref![data, 0 , 25];
+                let ( option_type,
+                    contract_size,
+                    quote_amount,
+                    expiry,
+                ) = array_refs![data_arr, 1, 8, 8, 8];
+                MangoInstruction::CreateOptionMarket {
+                    option_type : OptionType::try_from_primitive(option_type[0]).ok()?,
+                    contract_size: u64::from_le_bytes(*contract_size),
+                    quote_amount: u64::from_le_bytes(*quote_amount),
+                    expiry: u64::from_le_bytes(*expiry)
+                }
+            }
             _ => {
                 return None;
             }
@@ -2529,6 +2541,45 @@ pub fn change_spot_market_params(
         version,
     };
     let data = instr.pack();
+    Ok(Instruction { program_id: *program_id, accounts, data })
+}
+
+pub fn create_option_market(
+    program_id: &Pubkey,
+    market_pda: &Pubkey,
+    mint_pda: &Pubkey,
+    writer_pda: &Pubkey,
+    underlying_mint: &Pubkey,
+    quote_mint: &Pubkey,
+    payer: &Pubkey,
+    system_program : &Pubkey,
+    token_program: &Pubkey,
+    rent_program: &Pubkey,
+    option_type: OptionType,
+    contract_size: u64,
+    quote_amount: u64,
+    expiry: u64,
+) -> Result<Instruction, ProgramError> {
+    let accounts = vec![
+        AccountMeta::new(*market_pda, false),
+        AccountMeta::new(*mint_pda, false),
+        AccountMeta::new(*writer_pda, false),
+        AccountMeta::new_readonly(*underlying_mint, false),
+        AccountMeta::new_readonly(*quote_mint, false),
+        AccountMeta::new(*payer, true),
+        AccountMeta::new_readonly(*system_program, false),
+        AccountMeta::new_readonly(*token_program, false),
+        AccountMeta::new_readonly(*rent_program, false),
+    ];
+
+    let instr = MangoInstruction::CreateOptionMarket {
+        option_type,
+        contract_size,
+        quote_amount,
+        expiry,
+    };
+    let data = instr.pack();
+
     Ok(Instruction { program_id: *program_id, accounts, data })
 }
 
