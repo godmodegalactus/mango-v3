@@ -5700,6 +5700,8 @@ impl Processor {
              rent] = accounts;
         
         let mango_options_market_seeds: &[&[u8]] = &[b"mango_option_market",
+            underlying_asset_mint.key.as_ref(),
+            quote_asset_mint.key.as_ref(),
             &[option_type as u8], 
             &contract_size.to_le_bytes(), 
             &quote_amount.to_le_bytes(), 
