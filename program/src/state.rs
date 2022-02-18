@@ -2511,6 +2511,7 @@ pub struct OptionMarket {
     pub option_type: OptionType,
     pub option_mint: Pubkey,
     pub writer_token_mint: Pubkey,
+    pub market_mint_authority: Pubkey,
     pub underlying_token_index: usize,
     pub quote_token_index: usize,
     pub contract_size: I80F48,
@@ -2520,6 +2521,7 @@ pub struct OptionMarket {
     pub creator : Pubkey,
     pub tokens_in_underlying_pool : I80F48, // Tokens in the mango underlying pool related to this market
     pub tokens_in_quote_pool : I80F48, // Tokens in the mango quote pool related to this market
+    pub number_of_decimals: u8, // 6 by default
 }
 
 impl OptionMarket {
