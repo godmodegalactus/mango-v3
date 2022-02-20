@@ -974,9 +974,9 @@ pub enum MangoInstruction {
         amount : I80F48,
     },
 
-    /// Excersice an option / by this instruction user can excersice an option by swapping quote mints for underlying mints. 
+    /// Excercise an option / by this instruction user can excercise an option by swapping quote mints for underlying mints. 
     /// 
-    /// A user can excersice their option by swapping quote tokens for the underlying tokens.
+    /// A user can excercise their option by swapping quote tokens for the underlying tokens.
     /// In this process the option tokens will be burned
     /// 
     /// mango_group_ai - Mango Group
@@ -992,7 +992,7 @@ pub enum MangoInstruction {
     /// [writable] user_option_account - Acount where user will recieve option tokens
     /// [writable] user_excerise_account - Accout where user will recieve writers tokens
     /// token_program
-    ExcersiceOption {
+    ExcerciseOption {
         amount : I80F48,
     },
 }
@@ -1469,7 +1469,7 @@ impl MangoInstruction {
             },
             63 => {
                 let amount = array_ref![data, 0 , 16];
-                MangoInstruction::ExcersiceOption {
+                MangoInstruction::ExcerciseOption {
                     amount:  I80F48::from_le_bytes(*amount),
                 }
             }, 
@@ -2690,7 +2690,7 @@ pub fn write_option (
     Ok(Instruction { program_id: *program_id, accounts, data })
 }
 
-pub fn excersice_option (
+pub fn excercise_option (
     program_id: &Pubkey,
     mango_group: &Pubkey, // read
     mango_account: &Pubkey, // mut
@@ -2723,7 +2723,7 @@ pub fn excersice_option (
         AccountMeta::new_readonly(*token_program, false),
     ];
 
-    let instr = MangoInstruction::ExcersiceOption {
+    let instr = MangoInstruction::ExcerciseOption {
         amount,
     };
     let data = instr.pack();
