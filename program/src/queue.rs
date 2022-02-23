@@ -229,7 +229,8 @@ pub struct FillEvent {
     pub maker_slot: u8,
     pub maker_out: bool, // true if maker order quantity == 0
     pub version: u8,
-    pub padding: [u8; 3],
+    pub is_option: u8,
+    pub padding: [u8; 2],
     pub timestamp: u64,
     pub seq_num: usize, // note: usize same as u64
 
@@ -275,14 +276,17 @@ impl FillEvent {
         price: i64,
         quantity: i64,
         version: u8,
+        is_option: bool,
     ) -> FillEvent {
+        let is_opt :u8 = if is_option {1} else {0};
         Self {
             event_type: EventType::Fill as u8,
             taker_side,
             maker_slot,
             maker_out,
             version,
-            padding: [0u8; 3],
+            is_option:is_opt,
+            padding: [0u8; 2],
             timestamp,
             seq_num,
             maker,
