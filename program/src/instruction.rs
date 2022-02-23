@@ -932,15 +932,11 @@ pub enum MangoInstruction {
     /// Accounts expected by this instruction (9)
     /// 
     /// 0. [writable] Option Market a pda account which will store all the information related to the option market [b"mango_option_market", [underlying_index, quote_index], [optiontype],contract_size.le, quote_amount.le, expiry.le]]
-    /// 1. [writable] create a PDA for option mint with following keys [b"mango_option_mint", option_market.key]
-    /// 2. [writable] create a PDA for writer mint with following keys [b"mango_option_writer_mint", option_market.key]
-    /// 3. [writable] create a PDA for authority mint with following keys [b"mango_option_mint_authority", option_market.key]
-    /// 4. Underlying mint
-    /// 5. quote mint
-    /// 6. [signer] payer
-    /// 7. system program
-    /// 8. token program
-    /// 9. rent program
+    /// 1. [writable] bids create a PDA for authority mint with following keys [b"mango_option_bids", option_market.key]
+    /// 2. [writable] asks create a PDA for authority mint with following keys [b"mango_option_asks", option_market.key]
+    /// 3. [writable] event_queue create a PDA for authority mint with following keys [b"mango_option_event_queue", option_market.key]
+    /// 4. [signer] payer
+    /// 5. system program
     CreateOptionMarket {
         underlying_token_index:u8,
         quote_token_index:u8,
@@ -965,12 +961,8 @@ pub enum MangoInstruction {
     /// mango_cache_ai - Mango cache
     /// root_bank_ai - Root bank
     /// [writable] node_bank_ai - Node bank
-    /// [writable] option_mint - Option mint
-    /// [writable] writer_token_mint - Writer token mint
-    /// market_mint_authority - Mint authority pda for the market
-    /// [writable] user_option_account - Acount where user will recieve option tokens
-    /// [writable] user_writers_account - Accout where user will recieve writers tokens
-    /// token_program
+    /// [writable] user_trade_data a PDA created with following seed which [b"mango_option_user_data", option_market.key, mango_accout.key]
+    /// system_program
     WriteOption {
         amount : I80F48,
     },
@@ -989,10 +981,7 @@ pub enum MangoInstruction {
     /// quote_root_bank_ai - Root bank for quote token
     /// [writable] underlying_node_bank_ai - Node bank for underlying token
     /// [writable] quote_node_bank_ai - Node bank for quote token
-    /// [writable] option_mint - Option mint
-    /// market_mint_authority - Mint authority pda for the market
-    /// [writable] user_option_account - Acount where user will recieve option tokens
-    /// token_program
+    /// [writable] user_trade_data a PDA created with following seed which [b"mango_option_user_data", option_market.key, mango_accout.key]
     ExerciseOption {
         amount : I80F48,
     },
@@ -1011,10 +1000,7 @@ pub enum MangoInstruction {
     /// quote_root_bank_ai - Root bank for quote token
     /// [writable] underlying_node_bank_ai - Node bank for underlying token
     /// [writable] quote_node_bank_ai - Node bank for quote token
-    /// [writable] writers_mint - Option mint
-    /// market_mint_authority - Mint authority pda for the market
-    /// [writable] user_writers_account - Acount where user will recieve option tokens
-    /// token_program
+    /// [writable] user_trade_data a PDA created with following seed which [b"mango_option_user_data", option_market.key, mango_accout.key]
     ExchangeWritersTokens {
         amount : I80F48,
         exchange_for : ExchangeFor,
@@ -2697,7 +2683,7 @@ pub fn write_option (
     node_bank: &Pubkey, // write
     option_mint: &Pubkey, // write
     writers_mint: &Pubkey, // write
-    market_mint_authority: &Pubkey, //read
+    mango_option_authority: &Pubkey, //read
     user_option_account: &Pubkey, // write
     user_writers_account: &Pubkey, // write
     token_program: &Pubkey, // read
@@ -2713,7 +2699,7 @@ pub fn write_option (
         AccountMeta::new(*node_bank, false),
         AccountMeta::new(*option_mint, false),
         AccountMeta::new(*writers_mint, false),
-        AccountMeta::new_readonly(*market_mint_authority, false),
+        AccountMeta::new_readonly(*mango_option_authority, false),
         AccountMeta::new(*user_option_account, false),
         AccountMeta::new(*user_writers_account, false),
         AccountMeta::new_readonly(*token_program, false),
@@ -2738,7 +2724,7 @@ pub fn exercise_option (
     underlying_node_bank: &Pubkey, // write
     quote_node_bank: &Pubkey, //write
     option_mint: &Pubkey, // write
-    market_mint_authority: &Pubkey, //read
+    mango_option_authority: &Pubkey, //read
     user_option_account: &Pubkey, // write
     token_program: &Pubkey, // read
     amount: I80F48,
@@ -2754,7 +2740,7 @@ pub fn exercise_option (
         AccountMeta::new(*underlying_node_bank, false),
         AccountMeta::new(*quote_node_bank, false),
         AccountMeta::new(*option_mint, false),
-        AccountMeta::new_readonly(*market_mint_authority, false),
+        AccountMeta::new_readonly(*mango_option_authority, false),
         AccountMeta::new(*user_option_account, false),
         AccountMeta::new_readonly(*token_program, false),
     ];
@@ -2778,7 +2764,7 @@ pub fn exchange_writers_tokens (
     underlying_node_bank: &Pubkey, // write
     quote_node_bank: &Pubkey, //write
     writers_mint: &Pubkey, // write
-    market_mint_authority: &Pubkey, //read
+    mango_option_authority: &Pubkey, //read
     user_writers_account: &Pubkey, // write
     token_program: &Pubkey, // read
     amount: I80F48,
@@ -2795,7 +2781,7 @@ pub fn exchange_writers_tokens (
         AccountMeta::new(*underlying_node_bank, false),
         AccountMeta::new(*quote_node_bank, false),
         AccountMeta::new(*writers_mint, false),
-        AccountMeta::new_readonly(*market_mint_authority, false),
+        AccountMeta::new_readonly(*mango_option_authority, false),
         AccountMeta::new(*user_writers_account, false),
         AccountMeta::new_readonly(*token_program, false),
     ];
