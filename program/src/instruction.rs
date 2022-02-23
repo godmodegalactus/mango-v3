@@ -935,7 +935,7 @@ pub enum MangoInstruction {
     /// 1. [writable] bids create a PDA for authority mint with following keys [b"mango_option_bids", option_market.key]
     /// 2. [writable] asks create a PDA for authority mint with following keys [b"mango_option_asks", option_market.key]
     /// 3. [writable] event_queue create a PDA for authority mint with following keys [b"mango_option_event_queue", option_market.key]
-    /// 4. [signer] payer
+    /// 4. [writable, signer] payer
     /// 5. system program
     CreateOptionMarket {
         underlying_token_index:u8,
@@ -956,7 +956,7 @@ pub enum MangoInstruction {
     /// 
     /// mango_group_ai - Mango Group
     /// [writable] mango_account_ai - Mango Account
-    /// [signer] owner_ai - Owner
+    /// [writable, signer] owner_ai - Owner
     /// [writable] option_market_ai - Option Market
     /// mango_cache_ai - Mango cache
     /// root_bank_ai - Root bank
@@ -2632,15 +2632,13 @@ pub fn change_spot_market_params(
 pub fn create_option_market(
     program_id: &Pubkey,
     market_pda: &Pubkey,
-    mint_pda: &Pubkey,
-    writer_pda: &Pubkey,
-    authority_pda: &Pubkey,
-    underlying_token_index: u8,
-    quote_token_index: u8,
+    bids_pda: &Pubkey,
+    asks_pda: &Pubkey,
+    event_queue_pda: &Pubkey,
     payer: &Pubkey,
     system_program : &Pubkey,
-    token_program: &Pubkey,
-    rent_program: &Pubkey,
+    underlying_token_index: u8,
+    quote_token_index: u8,
     option_type: OptionType,
     contract_size: I80F48,
     quote_amount: I80F48,
@@ -2649,13 +2647,11 @@ pub fn create_option_market(
 ) -> Result<Instruction, ProgramError> {
     let accounts = vec![
         AccountMeta::new(*market_pda, false),
-        AccountMeta::new(*mint_pda, false),
-        AccountMeta::new(*writer_pda, false),
-        AccountMeta::new(*authority_pda, false),
+        AccountMeta::new(*bids_pda, false),
+        AccountMeta::new(*asks_pda, false),
+        AccountMeta::new(*event_queue_pda, false),
         AccountMeta::new(*payer, true),
         AccountMeta::new_readonly(*system_program, false),
-        AccountMeta::new_readonly(*token_program, false),
-        AccountMeta::new_readonly(*rent_program, false),
     ];
 
     let instr = MangoInstruction::CreateOptionMarket {
@@ -2681,28 +2677,20 @@ pub fn write_option (
     mango_cache: &Pubkey, // read
     root_bank: &Pubkey, // read
     node_bank: &Pubkey, // write
-    option_mint: &Pubkey, // write
-    writers_mint: &Pubkey, // write
-    mango_option_authority: &Pubkey, //read
-    user_option_account: &Pubkey, // write
-    user_writers_account: &Pubkey, // write
-    token_program: &Pubkey, // read
+    user_trade_data: &Pubkey,
+    system_program: &Pubkey, // read
     amount: I80F48,
 ) -> Result<Instruction, ProgramError> {
     let accounts = vec![
         AccountMeta::new_readonly(*mango_group, false),
         AccountMeta::new(*mango_account, false),
-        AccountMeta::new_readonly(*owner, true),
+        AccountMeta::new(*owner, true),
         AccountMeta::new(*option_market, false),
         AccountMeta::new_readonly(*mango_cache, false),
         AccountMeta::new_readonly(*root_bank, false),
         AccountMeta::new(*node_bank, false),
-        AccountMeta::new(*option_mint, false),
-        AccountMeta::new(*writers_mint, false),
-        AccountMeta::new_readonly(*mango_option_authority, false),
-        AccountMeta::new(*user_option_account, false),
-        AccountMeta::new(*user_writers_account, false),
-        AccountMeta::new_readonly(*token_program, false),
+        AccountMeta::new(*user_trade_data, false),
+        AccountMeta::new_readonly(*system_program, false),
     ];
 
     let instr = MangoInstruction::WriteOption {
@@ -2723,10 +2711,7 @@ pub fn exercise_option (
     quote_root_bank: &Pubkey,   //read
     underlying_node_bank: &Pubkey, // write
     quote_node_bank: &Pubkey, //write
-    option_mint: &Pubkey, // write
-    mango_option_authority: &Pubkey, //read
-    user_option_account: &Pubkey, // write
-    token_program: &Pubkey, // read
+    user_trade_data: &Pubkey,
     amount: I80F48,
 ) -> Result<Instruction, ProgramError> {
     let accounts = vec![
@@ -2739,10 +2724,7 @@ pub fn exercise_option (
         AccountMeta::new_readonly(*quote_root_bank, false),
         AccountMeta::new(*underlying_node_bank, false),
         AccountMeta::new(*quote_node_bank, false),
-        AccountMeta::new(*option_mint, false),
-        AccountMeta::new_readonly(*mango_option_authority, false),
-        AccountMeta::new(*user_option_account, false),
-        AccountMeta::new_readonly(*token_program, false),
+        AccountMeta::new(*user_trade_data, false),
     ];
 
     let instr = MangoInstruction::ExerciseOption {
@@ -2763,10 +2745,7 @@ pub fn exchange_writers_tokens (
     quote_root_bank: &Pubkey,   //read
     underlying_node_bank: &Pubkey, // write
     quote_node_bank: &Pubkey, //write
-    writers_mint: &Pubkey, // write
-    mango_option_authority: &Pubkey, //read
-    user_writers_account: &Pubkey, // write
-    token_program: &Pubkey, // read
+    user_trade_data: &Pubkey,
     amount: I80F48,
     exchange_for : ExchangeFor,
 ) -> Result<Instruction, ProgramError> {
@@ -2780,10 +2759,7 @@ pub fn exchange_writers_tokens (
         AccountMeta::new_readonly(*quote_root_bank, false),
         AccountMeta::new(*underlying_node_bank, false),
         AccountMeta::new(*quote_node_bank, false),
-        AccountMeta::new(*writers_mint, false),
-        AccountMeta::new_readonly(*mango_option_authority, false),
-        AccountMeta::new(*user_writers_account, false),
-        AccountMeta::new_readonly(*token_program, false),
+        AccountMeta::new(*user_trade_data, false),
     ];
 
     let instr = MangoInstruction::ExchangeWritersTokens {
