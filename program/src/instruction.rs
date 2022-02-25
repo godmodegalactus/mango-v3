@@ -1009,7 +1009,7 @@ pub enum MangoInstruction {
     /// Create Options orders on mango dex / by this instruction we create order to buy or sell options token in mango native orderbook
     /// 
     /// requires 11 accounts
-    CreateOptionsOrder {
+    PlaceOptionsOrder {
         amount : i64,
         price : i64,
         side : Side, 
@@ -1510,7 +1510,7 @@ impl MangoInstruction {
                 side, 
                 client_order_id ) = array_refs![data_arr, 8, 8, 1, 8];
 
-                MangoInstruction::CreateOptionsOrder {
+                MangoInstruction::PlaceOptionsOrder {
                     amount: i64::from_le_bytes(*amount),
                     price : i64::from_le_bytes(*price),
                     side : Side::try_from_primitive(side[0]).ok()?,
@@ -2794,7 +2794,7 @@ pub fn exchange_writers_tokens (
     Ok(Instruction { program_id: *program_id, accounts, data })
 }
 
-pub fn create_options_order (
+pub fn place_options_order (
     program_id: &Pubkey,
     mango_group: &Pubkey, // read
     mango_account: &Pubkey, // mut
@@ -2817,7 +2817,7 @@ pub fn create_options_order (
         AccountMeta::new(*mango_account, false),
         AccountMeta::new_readonly(*owner, true),
         AccountMeta::new(*user_trade_data, false),
-        AccountMeta::new_readonly(*option_market, false),
+        AccountMeta::new(*option_market, false),
         AccountMeta::new_readonly(*mango_cache, false),
         AccountMeta::new(*bids, false),
         AccountMeta::new(*asks, false),
@@ -2826,7 +2826,7 @@ pub fn create_options_order (
         AccountMeta::new(*quote_node_bank, false),
     ];
 
-    let instr = MangoInstruction::CreateOptionsOrder {
+    let instr = MangoInstruction::PlaceOptionsOrder {
         amount,
         price,
         side,
