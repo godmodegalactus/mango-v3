@@ -2807,6 +2807,7 @@ pub fn place_options_order (
     event_queue: &Pubkey, // mut
     quote_root_bank: &Pubkey,   //read
     quote_node_bank: &Pubkey, //write
+    system_program: &Pubkey, //read
     amount : i64,
     price : i64,
     side : Side, 
@@ -2815,7 +2816,7 @@ pub fn place_options_order (
     let accounts = vec![
         AccountMeta::new_readonly(*mango_group, false),
         AccountMeta::new(*mango_account, false),
-        AccountMeta::new_readonly(*owner, true),
+        AccountMeta::new(*owner, true),
         AccountMeta::new(*user_trade_data, false),
         AccountMeta::new(*option_market, false),
         AccountMeta::new_readonly(*mango_cache, false),
@@ -2824,6 +2825,7 @@ pub fn place_options_order (
         AccountMeta::new(*event_queue, false),
         AccountMeta::new_readonly(*quote_root_bank, false),
         AccountMeta::new(*quote_node_bank, false),
+        AccountMeta::new_readonly(*system_program, false),
     ];
 
     let instr = MangoInstruction::PlaceOptionsOrder {
