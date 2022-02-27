@@ -932,15 +932,11 @@ pub enum MangoInstruction {
     /// Accounts expected by this instruction (9)
     /// 
     /// 0. [writable] Option Market a pda account which will store all the information related to the option market [b"mango_option_market", [underlying_index, quote_index], [optiontype],contract_size.le, quote_amount.le, expiry.le]]
-    /// 1. [writable] create a PDA for option mint with following keys [b"mango_option_mint", option_market.key]
-    /// 2. [writable] create a PDA for writer mint with following keys [b"mango_option_writer_mint", option_market.key]
-    /// 3. [writable] create a PDA for authority mint with following keys [b"mango_option_mint_authority", option_market.key]
-    /// 4. Underlying mint
-    /// 5. quote mint
-    /// 6. [signer] payer
-    /// 7. system program
-    /// 8. token program
-    /// 9. rent program
+    /// 1. [writable] bids
+    /// 2. [writable] asks
+    /// 3. [writable] event_queue
+    /// 4. [writable, signer] payer
+    /// 5. system program
     CreateOptionMarket {
         underlying_token_index:u8,
         quote_token_index:u8,
@@ -958,19 +954,15 @@ pub enum MangoInstruction {
     /// Option token can be sold on serum market
     /// Writer token can be exchanged for either underlying tokens or quote tokens after expiry
     /// 
-    /// mango_group_ai - Mango Group
-    /// [writable] mango_account_ai - Mango Account
-    /// [signer] owner_ai - Owner
-    /// [writable] option_market_ai - Option Market
-    /// mango_cache_ai - Mango cache
-    /// root_bank_ai - Root bank
-    /// [writable] node_bank_ai - Node bank
-    /// [writable] option_mint - Option mint
-    /// [writable] writer_token_mint - Writer token mint
-    /// market_mint_authority - Mint authority pda for the market
-    /// [writable] user_option_account - Acount where user will recieve option tokens
-    /// [writable] user_writers_account - Accout where user will recieve writers tokens
-    /// token_program
+    /// 0. mango_group_ai - Mango Group
+    /// 1. [writable] mango_account_ai - Mango Account
+    /// 2. [writable, signer] owner_ai - Owner
+    /// 3. [writable] option_market_ai - Option Market
+    /// 4.vmango_cache_ai - Mango cache
+    /// 5. root_bank_ai - Root bank
+    /// 6. [writable] node_bank_ai - Node bank
+    /// 7. [writable] user_trade_data a PDA created with following seed which [b"mango_option_user_data", option_market.key, mango_accout.key]
+    /// 8. system_program
     WriteOption {
         amount : I80F48,
     },
@@ -980,19 +972,16 @@ pub enum MangoInstruction {
     /// A user can exercise their option by swapping quote tokens for the underlying tokens.
     /// In this process the option tokens will be burned
     /// 
-    /// mango_group_ai - Mango Group
-    /// [writable] mango_account_ai - Mango Account
-    /// [signer] owner_ai - Owner
-    /// [writable] option_market_ai - Option Market
-    /// mango_cache_ai - Mango cache
-    /// underlying_root_bank_ai - Root bank for underlying token
-    /// quote_root_bank_ai - Root bank for quote token
-    /// [writable] underlying_node_bank_ai - Node bank for underlying token
-    /// [writable] quote_node_bank_ai - Node bank for quote token
-    /// [writable] option_mint - Option mint
-    /// market_mint_authority - Mint authority pda for the market
-    /// [writable] user_option_account - Acount where user will recieve option tokens
-    /// token_program
+    /// 0. mango_group_ai - Mango Group
+    /// 1. [writable] mango_account_ai - Mango Account
+    /// 2. [signer] owner_ai - Owner
+    /// 3. [writable] option_market_ai - Option Market
+    /// 4. mango_cache_ai - Mango cache
+    /// 5. underlying_root_bank_ai - Root bank for underlying token
+    /// 6. quote_root_bank_ai - Root bank for quote token
+    /// 7. [writable] underlying_node_bank_ai - Node bank for underlying token
+    /// 8. [writable] quote_node_bank_ai - Node bank for quote token
+    /// 9. [writable] user_trade_data a PDA created with following seed which [b"mango_option_user_data", option_market.key, mango_accout.key]
     ExerciseOption {
         amount : I80F48,
     },
@@ -1002,23 +991,48 @@ pub enum MangoInstruction {
     /// If enough tokens are not available after then he/she will be forced to take remaining tokens
     /// Swapping tokens will burn the writers tokens
     /// 
-    /// mango_group_ai - Mango Group
-    /// [writable] mango_account_ai - Mango Account
-    /// [signer] owner_ai - Owner
-    /// [writable] option_market_ai - Option Market
-    /// mango_cache_ai - Mango cache
-    /// underlying_root_bank_ai - Root bank for underlying token
-    /// quote_root_bank_ai - Root bank for quote token
-    /// [writable] underlying_node_bank_ai - Node bank for underlying token
-    /// [writable] quote_node_bank_ai - Node bank for quote token
-    /// [writable] writers_mint - Option mint
-    /// market_mint_authority - Mint authority pda for the market
-    /// [writable] user_writers_account - Acount where user will recieve option tokens
-    /// token_program
+    /// 0. mango_group_ai - Mango Group
+    /// 1. [writable] mango_account_ai - Mango Account
+    /// 2. [signer] owner_ai - Owner
+    /// 3. [writable] option_market_ai - Option Market
+    /// 4. mango_cache_ai - Mango cache
+    /// 5. underlying_root_bank_ai - Root bank for underlying token
+    /// 6. quote_root_bank_ai - Root bank for quote token
+    /// 7. [writable] underlying_node_bank_ai - Node bank for underlying token
+    /// 8. [writable] quote_node_bank_ai - Node bank for quote token
+    /// 9. [writable] user_trade_data a PDA created with following seed which [b"mango_option_user_data", option_market.key, mango_accout.key]
     ExchangeWritersTokens {
         amount : I80F48,
         exchange_for : ExchangeFor,
-    }
+    },
+
+    /// Create Options orders on mango dex / by this instruction we create order to buy or sell options token in mango native orderbook
+    /// 
+    /// requires 12 accounts
+    /// 0. mango_group_ai
+    /// 1. [writable] mango_account_ai
+    /// 2. [writable,signer] owner_ai
+    /// 3. [writable] user_data_ai
+    /// 4. [writable] option_market_ai
+    /// 5. mango_cache_ai
+    /// 6. [writable] bids_ai
+    /// 7. [writable] asks_ai
+    /// 8. [writable] event_queue_ai
+    /// 9. quote_root_bank_ai
+    /// 10. [writable] quote_node_bank_ai
+    /// 11. system_program
+    PlaceOptionsOrder {
+        amount : i64,
+        price : i64,
+        side : Side, 
+        client_order_id: u64,
+    },
+
+    /// Consume Events for options / same as consume_events just for option event queue.
+    /// 
+    ConsumeEventsForOptions {
+        limit: u8,
+    },
 }
 
 impl MangoInstruction {
@@ -1506,7 +1520,27 @@ impl MangoInstruction {
                     amount:  I80F48::from_le_bytes(*amount),
                     exchange_for : ExchangeFor::try_from_primitive(exchange_for[0]).ok()?,
                 }
-            }, 
+            },
+            65 => {
+                let data_arr = array_ref![data, 0 , 25];
+                let (amount,
+                price,
+                side, 
+                client_order_id ) = array_refs![data_arr, 8, 8, 1, 8];
+
+                MangoInstruction::PlaceOptionsOrder {
+                    amount: i64::from_le_bytes(*amount),
+                    price : i64::from_le_bytes(*price),
+                    side : Side::try_from_primitive(side[0]).ok()?,
+                    client_order_id : u64::from_le_bytes(*client_order_id),
+                }
+            }
+            66 => {
+                let limit = array_ref![data, 0 , 1];
+                MangoInstruction::ConsumeEventsForOptions {
+                    limit : limit[0]
+                }
+            }
             _ => {
                 return None;
             }
@@ -2646,15 +2680,13 @@ pub fn change_spot_market_params(
 pub fn create_option_market(
     program_id: &Pubkey,
     market_pda: &Pubkey,
-    mint_pda: &Pubkey,
-    writer_pda: &Pubkey,
-    authority_pda: &Pubkey,
-    underlying_token_index: u8,
-    quote_token_index: u8,
+    bids_pda: &Pubkey,
+    asks_pda: &Pubkey,
+    event_queue_pda: &Pubkey,
     payer: &Pubkey,
     system_program : &Pubkey,
-    token_program: &Pubkey,
-    rent_program: &Pubkey,
+    underlying_token_index: u8,
+    quote_token_index: u8,
     option_type: OptionType,
     contract_size: I80F48,
     quote_amount: I80F48,
@@ -2663,13 +2695,11 @@ pub fn create_option_market(
 ) -> Result<Instruction, ProgramError> {
     let accounts = vec![
         AccountMeta::new(*market_pda, false),
-        AccountMeta::new(*mint_pda, false),
-        AccountMeta::new(*writer_pda, false),
-        AccountMeta::new(*authority_pda, false),
+        AccountMeta::new(*bids_pda, false),
+        AccountMeta::new(*asks_pda, false),
+        AccountMeta::new(*event_queue_pda, false),
         AccountMeta::new(*payer, true),
         AccountMeta::new_readonly(*system_program, false),
-        AccountMeta::new_readonly(*token_program, false),
-        AccountMeta::new_readonly(*rent_program, false),
     ];
 
     let instr = MangoInstruction::CreateOptionMarket {
@@ -2689,34 +2719,26 @@ pub fn create_option_market(
 pub fn write_option (
     program_id: &Pubkey,
     mango_group: &Pubkey, // read
-    mango_account: &Pubkey, // mut
+    mango_account: &Pubkey, // write
     owner: &Pubkey, // read, signer
-    option_market: &Pubkey, // mut
+    option_market: &Pubkey, // write
     mango_cache: &Pubkey, // read
     root_bank: &Pubkey, // read
     node_bank: &Pubkey, // write
-    option_mint: &Pubkey, // write
-    writers_mint: &Pubkey, // write
-    market_mint_authority: &Pubkey, //read
-    user_option_account: &Pubkey, // write
-    user_writers_account: &Pubkey, // write
-    token_program: &Pubkey, // read
+    user_trade_data: &Pubkey,
+    system_program: &Pubkey, // read
     amount: I80F48,
 ) -> Result<Instruction, ProgramError> {
     let accounts = vec![
         AccountMeta::new_readonly(*mango_group, false),
         AccountMeta::new(*mango_account, false),
-        AccountMeta::new_readonly(*owner, true),
+        AccountMeta::new(*owner, true),
         AccountMeta::new(*option_market, false),
         AccountMeta::new_readonly(*mango_cache, false),
         AccountMeta::new_readonly(*root_bank, false),
         AccountMeta::new(*node_bank, false),
-        AccountMeta::new(*option_mint, false),
-        AccountMeta::new(*writers_mint, false),
-        AccountMeta::new_readonly(*market_mint_authority, false),
-        AccountMeta::new(*user_option_account, false),
-        AccountMeta::new(*user_writers_account, false),
-        AccountMeta::new_readonly(*token_program, false),
+        AccountMeta::new(*user_trade_data, false),
+        AccountMeta::new_readonly(*system_program, false),
     ];
 
     let instr = MangoInstruction::WriteOption {
@@ -2729,18 +2751,15 @@ pub fn write_option (
 pub fn exercise_option (
     program_id: &Pubkey,
     mango_group: &Pubkey, // read
-    mango_account: &Pubkey, // mut
+    mango_account: &Pubkey, // write
     owner: &Pubkey, // read, signer
-    option_market: &Pubkey, // mut
+    option_market: &Pubkey, // write
     mango_cache: &Pubkey, // read
     underlying_root_bank: &Pubkey, // read
     quote_root_bank: &Pubkey,   //read
     underlying_node_bank: &Pubkey, // write
     quote_node_bank: &Pubkey, //write
-    option_mint: &Pubkey, // write
-    market_mint_authority: &Pubkey, //read
-    user_option_account: &Pubkey, // write
-    token_program: &Pubkey, // read
+    user_trade_data: &Pubkey,
     amount: I80F48,
 ) -> Result<Instruction, ProgramError> {
     let accounts = vec![
@@ -2753,10 +2772,7 @@ pub fn exercise_option (
         AccountMeta::new_readonly(*quote_root_bank, false),
         AccountMeta::new(*underlying_node_bank, false),
         AccountMeta::new(*quote_node_bank, false),
-        AccountMeta::new(*option_mint, false),
-        AccountMeta::new_readonly(*market_mint_authority, false),
-        AccountMeta::new(*user_option_account, false),
-        AccountMeta::new_readonly(*token_program, false),
+        AccountMeta::new(*user_trade_data, false),
     ];
 
     let instr = MangoInstruction::ExerciseOption {
@@ -2769,18 +2785,15 @@ pub fn exercise_option (
 pub fn exchange_writers_tokens (
     program_id: &Pubkey,
     mango_group: &Pubkey, // read
-    mango_account: &Pubkey, // mut
+    mango_account: &Pubkey, // write
     owner: &Pubkey, // read, signer
-    option_market: &Pubkey, // mut
+    option_market: &Pubkey, // write
     mango_cache: &Pubkey, // read
     underlying_root_bank: &Pubkey, // read
     quote_root_bank: &Pubkey,   //read
     underlying_node_bank: &Pubkey, // write
     quote_node_bank: &Pubkey, //write
-    writers_mint: &Pubkey, // write
-    market_mint_authority: &Pubkey, //read
-    user_writers_account: &Pubkey, // write
-    token_program: &Pubkey, // read
+    user_trade_data: &Pubkey,
     amount: I80F48,
     exchange_for : ExchangeFor,
 ) -> Result<Instruction, ProgramError> {
@@ -2794,15 +2807,87 @@ pub fn exchange_writers_tokens (
         AccountMeta::new_readonly(*quote_root_bank, false),
         AccountMeta::new(*underlying_node_bank, false),
         AccountMeta::new(*quote_node_bank, false),
-        AccountMeta::new(*writers_mint, false),
-        AccountMeta::new_readonly(*market_mint_authority, false),
-        AccountMeta::new(*user_writers_account, false),
-        AccountMeta::new_readonly(*token_program, false),
+        AccountMeta::new(*user_trade_data, false),
     ];
 
     let instr = MangoInstruction::ExchangeWritersTokens {
         amount,
         exchange_for,
+    };
+    let data = instr.pack();
+    Ok(Instruction { program_id: *program_id, accounts, data })
+}
+
+pub fn place_options_order (
+    program_id: &Pubkey,
+    mango_group: &Pubkey, // read
+    mango_account: &Pubkey, // write
+    owner: &Pubkey, // read, signer
+    user_trade_data: &Pubkey, // write
+    option_market: &Pubkey, // read
+    mango_cache: &Pubkey, // read
+    bids: &Pubkey, // write
+    asks: &Pubkey, // write
+    event_queue: &Pubkey, // write
+    quote_root_bank: &Pubkey,   //read
+    quote_node_bank: &Pubkey, //write
+    system_program: &Pubkey, //read
+    amount : i64,
+    price : i64,
+    side : Side, 
+    client_order_id: u64,
+) -> Result<Instruction, ProgramError> {
+    let accounts = vec![
+        AccountMeta::new_readonly(*mango_group, false),
+        AccountMeta::new(*mango_account, false),
+        AccountMeta::new(*owner, true),
+        AccountMeta::new(*user_trade_data, false),
+        AccountMeta::new(*option_market, false),
+        AccountMeta::new_readonly(*mango_cache, false),
+        AccountMeta::new(*bids, false),
+        AccountMeta::new(*asks, false),
+        AccountMeta::new(*event_queue, false),
+        AccountMeta::new_readonly(*quote_root_bank, false),
+        AccountMeta::new(*quote_node_bank, false),
+        AccountMeta::new_readonly(*system_program, false),
+    ];
+
+    let instr = MangoInstruction::PlaceOptionsOrder {
+        amount,
+        price,
+        side,
+        client_order_id,
+    };
+    let data = instr.pack();
+    Ok(Instruction { program_id: *program_id, accounts, data })
+}
+
+pub fn consume_events_for_options (
+    program_id: &Pubkey,
+    mango_group: &Pubkey, // read
+    mango_cache: &Pubkey, // read
+    options_market: &Pubkey, // read
+    event_queue: &Pubkey, // write
+    usdc_root_bank: &Pubkey, // read
+    usdc_node_bank: &Pubkey, // write
+    mango_accounts: &[Pubkey],
+    user_trade_datas: &[Pubkey],
+    limit: u8,
+) -> Result<Instruction, ProgramError> {
+    let fixed_accounts = vec![
+        AccountMeta::new_readonly(*mango_group, false),
+        AccountMeta::new_readonly(*mango_cache, false),
+        AccountMeta::new_readonly(*options_market, false),
+        AccountMeta::new(*event_queue, false),
+        AccountMeta::new_readonly(*usdc_root_bank, false),
+        AccountMeta::new(*usdc_node_bank, false),
+    ];
+    let mango_accounts_metas = mango_accounts.into_iter().map(|pk| AccountMeta::new(*pk, false));
+    let user_trade_datas_metas = user_trade_datas.into_iter().map(|pk| AccountMeta::new(*pk, false));
+    let accounts = fixed_accounts.into_iter().chain(user_trade_datas_metas).chain(mango_accounts_metas).collect();
+
+    let instr = MangoInstruction::ConsumeEventsForOptions {
+        limit
     };
     let data = instr.pack();
     Ok(Instruction { program_id: *program_id, accounts, data })

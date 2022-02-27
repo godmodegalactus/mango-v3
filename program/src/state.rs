@@ -24,7 +24,7 @@ use mango_macro::{Loadable, Pod, TriviallyTransmutable};
 
 use crate::error::{check_assert, MangoError, MangoErrorCode, MangoResult, SourceFileId};
 use crate::ids::mngo_token;
-use crate::matching::{Book, LeafNode, OrderType, Side};
+use crate::matching::{Book, LeafNode, OrderType, Side,};
 use crate::queue::{EventQueue, EventType, FillEvent};
 use crate::utils::{invert_side, pow_i80f48, remove_slop_mut, split_open_orders};
 
@@ -43,6 +43,7 @@ const MAX_RATE_ADJ: I80F48 = I80F48!(4); // TODO make this part of PerpMarket if
 const MIN_RATE_ADJ: I80F48 = I80F48!(0.25);
 pub const INFO_LEN: usize = 32;
 pub const MAX_PERP_OPEN_ORDERS: usize = 64;
+pub const MAX_OPTIONS_OPEN_ORDERS: usize = 64;
 pub const FREE_ORDER_SLOT: u8 = u8::MAX;
 pub const MAX_NUM_IN_MARGIN_BASKET: u8 = 9;
 pub const INDEX_START: I80F48 = I80F48!(1_000_000);
@@ -79,6 +80,7 @@ pub enum DataType {
     EventQueue,
     AdvancedOrders,
     OptionMarket,
+    UserOptionTradeData,
 }
 
 const NUM_HEALTHS: usize = 2;
@@ -2511,7 +2513,6 @@ pub struct OptionMarket {
     pub option_type: OptionType,
     pub option_mint: Pubkey,
     pub writer_token_mint: Pubkey,
-    pub market_mint_authority: Pubkey,
     pub underlying_token_index: usize,
     pub quote_token_index: usize,
     pub contract_size: I80F48,
@@ -2523,9 +2524,69 @@ pub struct OptionMarket {
     pub tokens_in_underlying_pool : I80F48, // Tokens in the mango underlying pool related to this market
     pub tokens_in_quote_pool : I80F48, // Tokens in the mango quote pool related to this market
     pub number_of_decimals: u8, // 6 by default
+
+    // order book and market related data
+    seq_num : u64,
+    pub bids: Pubkey,
+    pub asks: Pubkey,
+    pub event_queue: Pubkey,
 }
 
 impl OptionMarket {
+    pub fn load_and_init<'a>(
+        option_market_ai: &'a AccountInfo,
+        program_id: &Pubkey,
+        underlying_token_index: usize,
+        quote_token_index: usize,
+        option_type : OptionType,
+        contract_size: I80F48,
+        quote_amount: I80F48,
+        expiry:u64,
+        expiry_to_exercise_european : Option<u64>,
+        payer: &Pubkey,
+        bids: &Pubkey,
+        asks: &Pubkey,
+        event_queue: &Pubkey,
+        rent: &Rent,
+    )-> MangoResult<RefMut<'a, Self>> {
+        let mut option_market = Self::load_mut(option_market_ai)?;
+        check!(option_market_ai.owner == program_id, MangoErrorCode::InvalidOwner)?;
+        check!(
+            rent.is_exempt(option_market_ai.lamports(), size_of::<Self>()),
+            MangoErrorCode::AccountNotRentExempt
+        )?;
+        check!(!option_market.meta_data.is_initialized, MangoErrorCode::Default)?;
+        
+        option_market.meta_data = MetaData::new(DataType::OptionMarket, 0, true);
+        option_market.option_type = option_type;
+        option_market.underlying_token_index = underlying_token_index;
+        option_market.quote_token_index = quote_token_index;
+        option_market.contract_size = contract_size;
+        option_market.quote_amount = quote_amount;
+        option_market.expiry = expiry;
+        option_market.creator = *payer;
+        option_market.expired = false;
+        option_market.tokens_in_quote_pool = ZERO_I80F48;
+        option_market.tokens_in_underlying_pool = ZERO_I80F48;
+        option_market.number_of_decimals = 6;
+        option_market.seq_num = 0;
+        option_market.bids = *bids;
+        option_market.asks = *asks;
+        option_market.event_queue = *event_queue;
+
+        option_market.expiry_to_exercise_european = match expiry_to_exercise_european {
+            Some(x) => {
+                check!(x > option_market.expiry, MangoErrorCode::ExersiceExpiryBeforeExpiry)?;
+                x
+            },
+            None => {
+                check!(option_market.option_type != OptionType::European, MangoErrorCode::EuropeanOptionsNeedExersiceExpiry)?;
+                0
+            }
+        };
+        Ok(option_market)
+    }
+
     pub fn load_mut_checked<'a>(
         account: &'a AccountInfo,
         program_id: &Pubkey,
@@ -2559,6 +2620,15 @@ impl OptionMarket {
         Ok(option_market)
     }
 
+    pub fn gen_order_id(&mut self, side: Side, price: i64) -> i128 {
+        self.seq_num += 1;
+
+        let upper = (price as i128) << 64;
+        match side {
+            Side::Bid => upper | (!self.seq_num as i128),
+            Side::Ask => upper | (self.seq_num as i128),
+        }
+    }
 }
 
 // After expiry writer can decide if he/she wants to exhange writers tokens for underlying tokens or quote tokens,
@@ -2569,4 +2639,169 @@ impl OptionMarket {
 pub enum ExchangeFor {
     ForUnderlyingTokens,
     ForQuoteTokens,
+}
+
+#[derive(Copy, Clone, Loadable, Pod)]
+pub struct UserOptionTradeData {
+    pub meta_data: MetaData,
+    pub option_market : Pubkey,
+    pub mango_account : Pubkey,
+    pub decimal : u8,
+
+    pub number_of_option_tokens : u64,
+    pub number_of_writers_tokens : u64,
+
+    pub order_market: [bool; MAX_OPTIONS_OPEN_ORDERS],
+    pub order_side: [Side; MAX_OPTIONS_OPEN_ORDERS],
+    pub orders: [i128; MAX_OPTIONS_OPEN_ORDERS],
+    pub client_order_ids: [u64; MAX_OPTIONS_OPEN_ORDERS],
+
+    //nb of usdc locked in trading
+    pub number_of_usdc_locked : u64,
+    pub number_of_usdc_to_settle : u64,
+    pub number_of_locked_options_tokens : u64,
+    bids_quantity : i64,
+    asks_quantity: i64,
+}
+
+impl UserOptionTradeData {
+
+    pub fn load_and_init_if_needed<'a>( 
+        account: &'a AccountInfo,
+        program_id: &Pubkey,
+        option_market_pk: &Pubkey, 
+        mango_account_pk: &Pubkey, 
+        number_of_decimals : u8, 
+    ) -> MangoResult<RefMut<'a, Self>> {
+        let (user_data_pda, _user_bump) = Pubkey::find_program_address( 
+            &[b"mango_option_user_data", option_market_pk.as_ref(), mango_account_pk.as_ref()], 
+            program_id);
+        check!(user_data_pda == *account.key, MangoErrorCode::InvalidAccount)?;
+
+        check_eq!(account.owner, program_id, MangoErrorCode::InvalidOwner)?;
+        let mut trade_data: RefMut<'a, Self> = Self::load_mut(account)?;
+        if trade_data.meta_data.is_initialized {
+            check!(trade_data.meta_data.data_type == DataType::UserOptionTradeData as u8, MangoErrorCode::InvalidAccountState)?;
+        } else {
+            trade_data.meta_data = MetaData::new(DataType::UserOptionTradeData, 0, true);
+            trade_data.option_market = *option_market_pk;
+            trade_data.mango_account = *mango_account_pk;
+            trade_data.number_of_option_tokens = 0;
+            trade_data.number_of_writers_tokens = 0;
+            trade_data.decimal = number_of_decimals;
+            trade_data.number_of_usdc_locked = 0;
+            trade_data.bids_quantity = 0;
+            trade_data.asks_quantity = 0;
+
+            trade_data.order_market = [false; MAX_OPTIONS_OPEN_ORDERS];
+        }
+        Ok(trade_data)
+    }
+
+    pub fn load_mut_checked<'a>(
+        account: &'a AccountInfo,
+        program_id: &Pubkey,
+        option_market_pk: &Pubkey, 
+        mango_account_pk: &Pubkey, 
+    ) -> MangoResult<RefMut<'a, Self>> {
+        check_eq!(account.owner, program_id, MangoErrorCode::InvalidOwner)?;
+
+        let (user_data_pda, _user_bump) = Pubkey::find_program_address( 
+            &[b"mango_option_user_data", option_market_pk.as_ref(), mango_account_pk.as_ref()], 
+            program_id);
+        check!(user_data_pda == *account.key, MangoErrorCode::InvalidAccount)?;
+
+        let trade_data: RefMut<'a, Self> = Self::load_mut(account)?;
+        check!(trade_data.meta_data.is_initialized, MangoErrorCode::InvalidAccount)?;
+        check_eq!(
+            trade_data.meta_data.data_type,
+            DataType::UserOptionTradeData as u8,
+            MangoErrorCode::InvalidAccount
+        )?;
+
+        Ok(trade_data)
+    }
+
+    pub fn load_checked<'a>(
+        account: &'a AccountInfo,
+        program_id: &Pubkey,
+        option_market_pk: &Pubkey, 
+        mango_account_pk: &Pubkey, 
+    ) -> MangoResult<Ref<'a, Self>> {
+        check_eq!(account.owner, program_id, MangoErrorCode::InvalidOwner)?;
+        let (user_data_pda, _user_bump) = Pubkey::find_program_address( 
+            &[b"mango_option_user_data", option_market_pk.as_ref(), mango_account_pk.as_ref()], 
+            program_id);
+        check!(user_data_pda == *account.key, MangoErrorCode::InvalidAccount)?;
+
+        let trade_data: Ref<'a, Self> = Self::load(account)?;
+        check!(trade_data.meta_data.is_initialized, MangoErrorCode::InvalidAccount)?;
+        check_eq!(
+            trade_data.meta_data.data_type,
+            DataType::UserOptionTradeData as u8,
+            MangoErrorCode::InvalidAccount
+        )?;
+
+        Ok(trade_data)
+    }
+
+    pub fn add_bids_trade(&mut self, match_quantity: u64, quote_amount:u64, remaining_amount:u64 ) -> MangoResult {
+        check!(self.number_of_usdc_locked >= quote_amount, MangoErrorCode::InsufficientFunds)?;
+        self.number_of_option_tokens = self.number_of_option_tokens.checked_add(match_quantity).unwrap();
+        self.number_of_usdc_locked = self.number_of_usdc_locked.checked_sub(quote_amount).unwrap();
+        // move difference from locked to settled
+        self.number_of_usdc_locked = self.number_of_usdc_locked.checked_sub(remaining_amount).unwrap();
+        self.number_of_usdc_to_settle = self.number_of_usdc_to_settle.checked_add(remaining_amount).unwrap();
+        Ok(())
+    }
+
+    pub fn add_asks_trade(&mut self, match_quantity: u64, quote_amount:u64 ) -> MangoResult {
+        check!(self.number_of_locked_options_tokens >= match_quantity, MangoErrorCode::InsufficientFunds)?;
+        self.number_of_locked_options_tokens = self.number_of_locked_options_tokens.checked_sub(match_quantity).unwrap();
+        self.number_of_usdc_to_settle = self.number_of_usdc_to_settle.checked_add(quote_amount).unwrap();
+        Ok(())
+    }
+    
+    pub fn next_order_slot(&self) -> Option<usize> {
+        self.order_market.iter().position(|&i| i == false)
+    }
+
+    pub fn add_order(&mut self, side: Side, order: &LeafNode) -> MangoResult {
+        match side {
+            Side::Bid => {
+                self.bids_quantity = self.bids_quantity
+                    .checked_add(order.quantity)
+                    .unwrap();
+            }
+            Side::Ask => {
+                self.asks_quantity = self.asks_quantity
+                    .checked_add(order.quantity)
+                    .unwrap();
+            }
+        };
+        let slot = order.owner_slot as usize;
+        self.order_market[slot] = true;
+        self.order_side[slot] = side;
+        self.orders[slot] = order.key;
+        self.client_order_ids[slot] = order.client_order_id;
+        Ok(())
+    }
+
+    pub fn remove_order(&mut self, slot: usize, quantity: i64) -> MangoResult<()> {
+        check!(self.order_market[slot] == true, MangoErrorCode::Default)?;
+        // accounting
+        match self.order_side[slot] {
+            Side::Bid => {
+               self.bids_quantity = self.bids_quantity.checked_sub(quantity).unwrap();
+            }
+            Side::Ask => {
+               self.asks_quantity = self.asks_quantity.checked_sub(quantity).unwrap();
+            }
+        }
+        self.order_market[slot] = false;
+        self.order_side[slot] = Side::Bid;
+        self.orders[slot] = 0i128;
+        self.client_order_ids[slot] = 0u64;
+        Ok(())
+    }
 }
